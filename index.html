@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Who Does Your Browser Think You Are?</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            surface: '#0f1117',
+            card: '#161b22',
+            border: '#30363d',
+            accent: '#58a6ff',
+            warn: '#f78166',
+            muted: '#8b949e',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #0f1117; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; }
+    .mono { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; }
+    .scan-bar { transition: width 0.3s ease; }
+    .fade-in { animation: fadeIn 0.4s ease forwards; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    .confidence-bar { height: 6px; border-radius: 3px; background: #21262d; overflow: hidden; }
+    .confidence-fill { height: 100%; border-radius: 3px; transition: width 1s ease; }
+    .expand-btn { cursor: pointer; }
+    .expand-content { display: none; }
+    .expand-content.open { display: block; }
+    details summary { list-style: none; cursor: pointer; }
+    details summary::-webkit-details-marker { display: none; }
+    .signal-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; background: #1c2128; border: 1px solid #30363d; color: #8b949e; }
+    .ad-card { background: linear-gradient(135deg, #1a1f2e 0%, #161b22 100%); border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+    .pulse { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .glitch { position: relative; }
+    @media (max-width: 640px) { .grid-cols-responsive { grid-template-columns: 1fr !important; } }
+  </style>
+</head>
+<body class="min-h-screen">
+
+<!-- LANDING -->
+<div id="landing" class="min-h-screen flex flex-col items-center justify-center px-4 text-center">
+  <div class="max-w-2xl mx-auto">
+    <div class="text-xs mono text-muted mb-6 tracking-widest">BROWSER INTELLIGENCE DEMO</div>
+    <h1 class="text-4xl sm:text-5xl font-bold mb-6 leading-tight">
+      Who does your browser<br/>
+      <span class="text-accent">think you are?</span>
+    </h1>
+    <p class="text-muted text-lg mb-4 leading-relaxed">
+      Ad networks profile you from dozens of passive signals before you click anything.
+      This tool runs the same analysis, locally, and shows you exactly what they see.
+    </p>
+    <div class="card p-4 mb-8 text-left text-sm text-muted">
+      <span class="text-green-400 font-semibold">Privacy guarantee:</span> Nothing leaves your browser except one anonymous IP geolocation lookup.
+    </div>
+    <button id="scanBtn" onclick="startScan()"
+      class="bg-accent text-gray-900 font-bold px-8 py-4 rounded-xl text-lg hover:bg-blue-400 transition-colors">
+      Run the scan
+    </button>
+    <p class="text-muted text-xs mt-4">Takes about 3-5 seconds</p>
+  </div>
+</div>
+
+<!-- SCAN ANIMATION -->
+<div id="scanning" class="hidden min-h-screen flex flex-col items-center justify-center px-4">
+  <div class="max-w-lg w-full">
+    <div class="text-center mb-8">
+      <div class="text-xl font-semibold mb-2">Scanning your browser</div>
+      <div id="scanStatus" class="text-muted text-sm mono">Initializing...</div>
+    </div>
+    <div class="card p-6">
+      <div class="confidence-bar mb-4">
+        <div id="scanProgress" class="confidence-fill bg-accent scan-bar" style="width:0%"></div>
+      </div>
+      <div id="scanLog" class="space-y-2 text-sm mono text-muted max-h-48 overflow-hidden"></div>
+    </div>
+  </div>
+</div>
+
+<!-- RESULTS -->
+<div id="results" class="hidden px-4 py-8">
+  <div class="max-w-4xl mx-auto">
+
+    <!-- Header -->
+    <div class="text-center mb-10">
+      <div class="text-xs mono text-warn mb-3 tracking-widest">SCAN COMPLETE</div>
+      <h2 class="text-3xl font-bold mb-3">Here's what we found</h2>
+      <p class="text-muted">Everything below was inferred from signals your browser emits passively.</p>
+      <div class="mt-4 flex items-center justify-center gap-4 flex-wrap">
+        <div class="card px-4 py-2 text-sm">
+          <span class="text-muted">Fingerprint ID</span>
+          <span id="fingerprintDisplay" class="mono text-accent ml-2">...</span>
+        </div>
+        <div class="card px-4 py-2 text-sm">
+          <span class="text-muted">Uniqueness</span>
+          <span id="uniquenessDisplay" class="text-warn ml-2 font-semibold">...</span>
+        </div>
+        <button onclick="exportProfile()" class="card px-4 py-2 text-sm text-accent hover:text-blue-300 transition-colors">
+          Export JSON
+        </button>
+      </div>
+    </div>
+
+    <!-- Exposure Score -->
+    <div class="card p-6 mb-6 fade-in">
+      <h3 class="font-semibold text-lg mb-4">Exposure Score</h3>
+      <div class="flex items-center gap-6">
+        <div class="relative w-24 h-24 flex-shrink-0">
+          <svg viewBox="0 0 36 36" class="w-24 h-24 -rotate-90">
+            <circle cx="18" cy="18" r="15.9" fill="none" stroke="#21262d" stroke-width="3"/>
+            <circle id="scoreCircle" cx="18" cy="18" r="15.9" fill="none" stroke="#f78166"
+              stroke-width="3" stroke-dasharray="0 100" stroke-linecap="round"
+              style="transition: stroke-dasharray 1.5s ease"/>
+          </svg>
+          <div class="absolute inset-0 flex items-center justify-center">
+            <span id="scoreNumber" class="text-2xl font-bold text-warn">0</span>
+          </div>
+        </div>
+        <div>
+          <div id="scoreLabel" class="text-lg font-semibold mb-1">Calculating...</div>
+          <div id="scoreDesc" class="text-muted text-sm leading-relaxed"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Two columns: signals -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+
+      <!-- Device & Browser -->
+      <div class="card p-5 fade-in">
+        <h3 class="font-semibold mb-4 flex items-center gap-2">
+          <span class="text-accent">01</span> Device &amp; Browser
+        </h3>
+        <div id="deviceSignals" class="space-y-3 text-sm"></div>
+      </div>
+
+      <!-- Location & Network -->
+      <div class="card p-5 fade-in">
+        <h3 class="font-semibold mb-4 flex items-center gap-2">
+          <span class="text-accent">02</span> Location &amp; Network
+        </h3>
+        <div id="networkSignals" class="space-y-3 text-sm"></div>
+      </div>
+
+      <!-- Fingerprinting -->
+      <div class="card p-5 fade-in">
+        <h3 class="font-semibold mb-4 flex items-center gap-2">
+          <span class="text-accent">03</span> Fingerprinting
+        </h3>
+        <div id="fingerprintSignals" class="space-y-3 text-sm"></div>
+      </div>
+
+      <!-- Behavioral -->
+      <div class="card p-5 fade-in">
+        <h3 class="font-semibold mb-4 flex items-center gap-2">
+          <span class="text-accent">04</span> Behavioral Signals
+        </h3>
+        <div id="behaviorSignals" class="space-y-3 text-sm"></div>
+      </div>
+
+    </div>
+
+    <!-- Inferences -->
+    <div class="card p-6 mb-6 fade-in">
+      <h3 class="font-semibold text-lg mb-2">Demographic Inferences</h3>
+      <p class="text-muted text-sm mb-6">
+        These are probabilistic guesses, not facts. This is how ad networks actually reason about you.
+      </p>
+      <div id="inferences" class="space-y-5"></div>
+    </div>
+
+    <!-- Psychographic -->
+    <div class="card p-6 mb-6 fade-in">
+      <h3 class="font-semibold text-lg mb-2">Psychographic Profile
+        <span class="text-xs text-warn font-normal ml-2">Speculative</span>
+      </h3>
+      <p class="text-muted text-sm mb-6">
+        This is the most unfounded part. Ad networks do bucket users this way; the signals are genuinely
+        this thin. The point is how little it takes to generate a confident-sounding profile.
+      </p>
+      <div id="psychographic" class="space-y-5"></div>
+    </div>
+
+    <!-- Interest Categories -->
+    <div class="card p-6 mb-6 fade-in">
+      <h3 class="font-semibold text-lg mb-2">Interest Buckets</h3>
+      <p class="text-muted text-sm mb-4">
+        IAB-style categories ad networks would assign to this browser.
+      </p>
+      <div id="interests" class="flex flex-wrap gap-2 mb-4"></div>
+      <div id="interestDetails" class="space-y-3"></div>
+    </div>
+
+    <!-- Ad Simulations -->
+    <div class="card p-6 mb-6 fade-in">
+      <h3 class="font-semibold text-lg mb-2">Ads You'd Be Served</h3>
+      <p class="text-muted text-sm mb-6">
+        Mock creative concepts based on your inferred profile. These aren't real ads.
+        The point is how specifically they'd be tailored.
+      </p>
+      <div id="adCards" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+    </div>
+
+    <!-- Defense Guide -->
+    <div class="card p-6 mb-6 fade-in">
+      <h3 class="font-semibold text-lg mb-4">How to Reduce This Exposure</h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm" id="defenseGuide"></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center text-muted text-xs py-8">
+      Built as a privacy education tool. No data was collected. No data was transmitted (except one IP lookup).
+      <br/>Open source. View source to verify.
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let scanData = {};
+let pageLoadTime = Date.now();
+let mouseMovements = [];
+let scrollEvents = [];
+let clickTimes = [];
+
+// Track behavior from load
+document.addEventListener('mousemove', e => {
+  mouseMovements.push({ x: e.clientX, y: e.clientY, t: Date.now() });
+  if (mouseMovements.length > 200) mouseMovements = mouseMovements.slice(-200);
+});
+document.addEventListener('scroll', () => scrollEvents.push(Date.now()));
+document.addEventListener('click', () => clickTimes.push(Date.now()));
+
+// ─── UTILITIES ────────────────────────────────────────────────────────────────
+function djb2(str) {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+    hash = hash & hash;
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+async function sha256(str) {
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
+  } catch (e) {
+    // crypto.subtle not available on file:// in Safari — fall back to djb2
+    return djb2(str).padStart(12, '0');
+  }
+}
+
+function signalRow(label, value, color = '') {
+  const colorClass = color || (value === 'Unknown' || value === 'N/A' ? 'text-muted' : 'text-green-400');
+  return `<div class="flex justify-between items-start gap-2">
+    <span class="text-muted flex-shrink-0">${label}</span>
+    <span class="mono ${colorClass} text-right break-all">${value}</span>
+  </div>`;
+}
+
+function inferenceCard(label, confidence, why, howWrong, signals = []) {
+  const color = confidence >= 70 ? '#58a6ff' : confidence >= 45 ? '#e3b341' : '#8b949e';
+  const id = 'inf_' + Math.random().toString(36).slice(2);
+  const sigTags = signals.map(s => `<span class="signal-tag">${s}</span>`).join(' ');
+  return `
+  <div class="border border-border rounded-lg p-4">
+    <div class="flex items-start justify-between gap-4 mb-3">
+      <div class="font-medium">${label}</div>
+      <div class="text-right flex-shrink-0">
+        <div class="font-bold" style="color:${color}">${confidence}%</div>
+        <div class="text-xs text-muted">confidence</div>
+      </div>
+    </div>
+    <div class="confidence-bar mb-3">
+      <div class="confidence-fill" style="background:${color};width:${confidence}%"></div>
+    </div>
+    <div class="flex flex-wrap gap-1 mb-3">${sigTags}</div>
+    <details class="text-sm">
+      <summary class="text-muted hover:text-accent transition-colors">Why this inference?</summary>
+      <div class="mt-2 text-muted leading-relaxed">${why}</div>
+      <div class="mt-2 p-3 rounded-lg text-xs" style="background:#1c2128">
+        <span class="text-warn">How wrong might this be?</span> ${howWrong}
+      </div>
+    </details>
+  </div>`;
+}
+
+function adCard(headline, sub, targeting, reason) {
+  return `
+  <div class="ad-card">
+    <div class="text-xs text-muted mono mb-2">SPONSORED</div>
+    <div class="font-semibold mb-1">${headline}</div>
+    <div class="text-muted text-sm mb-3">${sub}</div>
+    <div class="text-xs text-muted border-t border-border pt-2 mt-2">
+      <span class="text-warn">Targeting: </span>${targeting}
+      <div class="text-muted/70 mt-1">${reason}</div>
+    </div>
+  </div>`;
+}
+
+// ─── SIGNAL COLLECTION ────────────────────────────────────────────────────────
+
+function collectDevice() {
+  const ua = navigator.userAgent;
+  let os = 'Unknown', browser = 'Unknown', version = '?';
+
+  if (/Windows NT/.test(ua)) os = 'Windows ' + (ua.match(/Windows NT ([\d.]+)/)?.[1] || '');
+  else if (/Mac OS X/.test(ua)) os = 'macOS ' + (ua.match(/Mac OS X ([\d_]+)/)?.[1]?.replace(/_/g, '.') || '');
+  else if (/iPhone|iPad/.test(ua)) os = 'iOS';
+  else if (/Android/.test(ua)) os = 'Android ' + (ua.match(/Android ([\d.]+)/)?.[1] || '');
+  else if (/Linux/.test(ua)) os = 'Linux';
+  else if (/CrOS/.test(ua)) os = 'ChromeOS';
+
+  if (/Edg\//.test(ua)) { browser = 'Edge'; version = ua.match(/Edg\/([\d.]+)/)?.[1] || '?'; }
+  else if (/Chrome\//.test(ua) && !/Chromium/.test(ua)) { browser = 'Chrome'; version = ua.match(/Chrome\/([\d.]+)/)?.[1] || '?'; }
+  else if (/Firefox\//.test(ua)) { browser = 'Firefox'; version = ua.match(/Firefox\/([\d.]+)/)?.[1] || '?'; }
+  else if (/Safari\//.test(ua)) { browser = 'Safari'; version = ua.match(/Version\/([\d.]+)/)?.[1] || '?'; }
+
+  return {
+    os, browser, version,
+    screen: `${screen.width}x${screen.height}`,
+    colorDepth: screen.colorDepth,
+    dpr: window.devicePixelRatio || 1,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    touchSupport: navigator.maxTouchPoints > 0,
+    maxTouchPoints: navigator.maxTouchPoints || 0,
+    cores: navigator.hardwareConcurrency || 'Unknown',
+    memory: navigator.deviceMemory || 'Unknown',
+    platform: navigator.platform || 'Unknown',
+    doNotTrack: navigator.doNotTrack === '1' || navigator.doNotTrack === 'yes',
+    cookiesEnabled: navigator.cookieEnabled,
+    languages: navigator.languages ? navigator.languages.join(', ') : navigator.language,
+    ua,
+  };
+}
+
+function collectNetwork() {
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  return {
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    locale: Intl.DateTimeFormat().resolvedOptions().locale,
+    referrer: document.referrer || 'Direct',
+    connection: conn ? (conn.effectiveType || 'Unknown') : 'Unknown',
+    downlink: conn ? (conn.downlink || 'Unknown') : 'Unknown',
+  };
+}
+
+async function collectFingerprints() {
+  // Canvas fingerprint
+  let canvasHash = 'blocked';
+  try {
+    const c = document.createElement('canvas');
+    c.width = 300; c.height = 100;
+    const ctx = c.getContext('2d');
+    ctx.textBaseline = 'top';
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#f60';
+    ctx.fillRect(125, 1, 62, 20);
+    ctx.fillStyle = '#069';
+    ctx.fillText('Browser fingerprint test 🖥️ Ξ', 2, 15);
+    ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
+    ctx.font = '12px Georgia';
+    ctx.fillText('Cwm fjordbank glyphs vext quiz', 2, 45);
+    canvasHash = djb2(c.toDataURL());
+  } catch (e) { canvasHash = 'blocked'; }
+
+  // WebGL
+  let webglRenderer = 'Unknown', webglVendor = 'Unknown';
+  try {
+    const gl = document.createElement('canvas').getContext('webgl') ||
+               document.createElement('canvas').getContext('experimental-webgl');
+    if (gl) {
+      const di = gl.getExtension('WEBGL_debug_renderer_info');
+      if (di) {
+        webglRenderer = gl.getParameter(di.UNMASKED_RENDERER_WEBGL);
+        webglVendor = gl.getParameter(di.UNMASKED_VENDOR_WEBGL);
+      }
+      if (webglRenderer === 'Unknown') {
+        webglRenderer = gl.getParameter(gl.RENDERER);
+        webglVendor = gl.getParameter(gl.VENDOR);
+      }
+    }
+  } catch (e) {}
+
+  // Audio fingerprint
+  let audioHash = 'blocked';
+  try {
+    const ac = new OfflineAudioContext(1, 44100, 44100);
+    const osc = ac.createOscillator();
+    const analyser = ac.createAnalyser();
+    const gain = ac.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = 10000;
+    gain.gain.value = 0.001;
+    osc.connect(analyser);
+    analyser.connect(gain);
+    gain.connect(ac.destination);
+    osc.start(0);
+    const buf = await ac.startRendering();
+    const data = buf.getChannelData(0);
+    let sum = 0;
+    for (let i = 4500; i < 5000; i++) sum += Math.abs(data[i]);
+    audioHash = djb2(sum.toString());
+  } catch (e) { audioHash = 'blocked'; }
+
+  // Font detection
+  const testFonts = ['Arial', 'Times New Roman', 'Courier New', 'Georgia', 'Verdana',
+    'Trebuchet MS', 'Impact', 'Comic Sans MS', 'Palatino', 'Garamond',
+    'Bookman', 'Avant Garde', 'Helvetica Neue', 'Gill Sans', 'Optima',
+    'Futura', 'Century Gothic', 'Franklin Gothic', 'Consolas', 'Monaco'];
+  const detected = [];
+  const span = document.createElement('span');
+  span.style.fontSize = '72px';
+  span.innerHTML = 'mmmmmmmmmmlli';
+  document.body.appendChild(span);
+  span.style.fontFamily = 'monospace';
+  const baseW = span.offsetWidth;
+  const baseH = span.offsetHeight;
+  for (const font of testFonts) {
+    span.style.fontFamily = `'${font}', monospace`;
+    if (span.offsetWidth !== baseW || span.offsetHeight !== baseH) detected.push(font);
+  }
+  document.body.removeChild(span);
+
+  const combined = canvasHash + webglRenderer + audioHash + detected.join('');
+  const fingerprint = await sha256(combined);
+
+  return { canvasHash, webglRenderer, webglVendor, audioHash, fonts: detected, fingerprint };
+}
+
+function collectBehavior() {
+  const now = Date.now();
+  const dwellMs = now - pageLoadTime;
+
+  let mouseEntropy = 0;
+  if (mouseMovements.length > 5) {
+    const dists = [];
+    for (let i = 1; i < mouseMovements.length; i++) {
+      const dx = mouseMovements[i].x - mouseMovements[i-1].x;
+      const dy = mouseMovements[i].y - mouseMovements[i-1].y;
+      dists.push(Math.sqrt(dx*dx + dy*dy));
+    }
+    const avg = dists.reduce((a,b)=>a+b,0)/dists.length;
+    const variance = dists.reduce((a,b)=>a+(b-avg)**2,0)/dists.length;
+    mouseEntropy = Math.min(100, Math.round(Math.sqrt(variance)));
+  }
+
+  const hour = new Date().getHours();
+  let timeOfDay;
+  if (hour >= 5 && hour < 9) timeOfDay = 'Early morning (5-9am)';
+  else if (hour >= 9 && hour < 12) timeOfDay = 'Morning (9am-12pm)';
+  else if (hour >= 12 && hour < 17) timeOfDay = 'Business hours (12-5pm)';
+  else if (hour >= 17 && hour < 21) timeOfDay = 'Evening (5-9pm)';
+  else if (hour >= 21 || hour < 1) timeOfDay = 'Late evening (9pm-1am)';
+  else timeOfDay = 'Late night (1-5am)';
+
+  return {
+    dwellMs,
+    mouseMovements: mouseMovements.length,
+    mouseEntropy,
+    scrollEvents: scrollEvents.length,
+    clickCount: clickTimes.length,
+    timeOfDay,
+    hour,
+  };
+}
+
+async function collectIPData() {
+  try {
+    const res = await fetch('https://ipwho.is/', { signal: AbortSignal.timeout(5000) });
+    const d = await res.json();
+    if (!d.success) throw new Error('failed');
+    return {
+      ip: d.ip,
+      city: d.city,
+      region: d.region,
+      country: d.country,
+      isp: d.connection?.isp || d.org || 'Unknown',
+      asn: d.connection?.asn ? 'AS' + d.connection.asn : 'Unknown',
+      org: d.connection?.org || 'Unknown',
+      timezone: d.timezone?.id || 'Unknown',
+      lat: d.latitude,
+      lon: d.longitude,
+      postal: d.postal,
+    };
+  } catch (e) {
+    return { ip: 'Unavailable', city: 'Unknown', region: 'Unknown', country: 'Unknown',
+             isp: 'Unknown', asn: 'Unknown', org: 'Unknown', timezone: 'Unknown' };
+  }
+}
+
+// ─── INFERENCE ENGINE ──────────────────────────────────────────────────────────
+function buildInferences(data) {
+  const { device, network, fp, behavior, ip } = data;
+  const inferences = [];
+
+  // Apple = higher income signal
+  const isApple = device.os.startsWith('macOS') || device.os === 'iOS';
+  const isWindows = device.os.startsWith('Windows');
+  const isMobile = device.touchSupport && device.maxTouchPoints > 0 && (device.os === 'iOS' || device.os.startsWith('Android'));
+  const isRetina = device.dpr >= 2;
+  const hasGoodGPU = fp.webglRenderer !== 'Unknown' && !/Intel|llvmpipe|SwiftShader/i.test(fp.webglRenderer);
+  const hasHighMem = device.memory !== 'Unknown' && device.memory >= 8;
+  const screenArea = parseInt(device.screen) * parseInt(device.screen.split('x')[1]);
+  const isLargeScreen = device.screen && parseInt(device.screen) >= 2560;
+
+  // --- Age ---
+  let ageLow = 25, ageHigh = 45, ageConf = 45;
+  if (isApple) { ageLow = 25; ageHigh = 40; ageConf += 10; }
+  if (isWindows) { ageLow = 30; ageHigh = 55; ageConf += 5; }
+  if (device.os === 'iOS' || device.os.startsWith('Android')) { ageLow = 18; ageHigh = 35; ageConf += 8; }
+  if (device.browser === 'Firefox') { ageLow = 28; ageHigh = 50; ageConf += 12; }
+  if (behavior.hour >= 22 || behavior.hour < 6) { ageLow -= 5; ageHigh -= 5; ageConf += 5; }
+  ageConf = Math.min(ageConf, 72);
+  inferences.push({
+    label: `Estimated age: ${ageLow}-${ageHigh}`,
+    confidence: ageConf,
+    signals: ['OS platform', 'Browser choice', 'Activity time', 'Screen resolution'],
+    why: `${isApple ? 'macOS/iOS users skew younger and higher income' : isWindows ? 'Windows users span a wider age range, slightly skewing older' : 'Linux/other OS usage suggests technical users, age varies'}. Browser choice (${device.browser}) also correlates with age demographics. Activity at ${behavior.timeOfDay} shifts the estimate ${behavior.hour >= 22 || behavior.hour < 6 ? 'younger' : 'slightly'}.`,
+    howWrong: 'Age from browser signals has roughly ±15 years of error. This is a coarse bucket, not a real estimate. A 60-year-old on a MacBook Pro will look identical to a 28-year-old to this heuristic.'
+  });
+
+  // --- Income ---
+  let incomeLabel = '$50k-$80k', incomeConf = 40;
+  let incomeScore = 0;
+  if (isApple) incomeScore += 30;
+  if (isRetina) incomeScore += 15;
+  if (hasGoodGPU) incomeScore += 15;
+  if (hasHighMem) incomeScore += 10;
+  if (device.cores !== 'Unknown' && device.cores >= 8) incomeScore += 10;
+  if (isLargeScreen) incomeScore += 10;
+  // ISP tier
+  if (/fiber|fios|google fiber/i.test(ip.isp || '')) incomeScore += 10;
+  // Location (rough heuristic)
+  const highCostCities = ['San Francisco', 'New York', 'Seattle', 'Boston', 'Austin', 'Los Angeles', 'Chicago'];
+  if (highCostCities.some(c => (ip.city || '').includes(c))) incomeScore += 15;
+  if (incomeScore >= 70) { incomeLabel = '$150k+'; incomeConf = 65; }
+  else if (incomeScore >= 50) { incomeLabel = '$100k-$150k'; incomeConf = 58; }
+  else if (incomeScore >= 30) { incomeLabel = '$70k-$100k'; incomeConf = 50; }
+  else { incomeLabel = '$40k-$70k'; incomeConf = 42; }
+  inferences.push({
+    label: `Likely income: ${incomeLabel}`,
+    confidence: incomeConf,
+    signals: ['Device OS', 'Screen DPR', 'GPU model', 'RAM', 'CPU cores', 'City', 'ISP'],
+    why: `Device quality signals: ${isApple ? 'Apple hardware (strong income indicator)' : 'non-Apple hardware'}${isRetina ? ', Retina/HiDPI display' : ''}${hasGoodGPU && fp.webglRenderer !== 'Unknown' ? ', dedicated GPU (' + fp.webglRenderer.slice(0,30) + ')' : ''}${hasHighMem ? ', 8GB+ RAM' : ''}. Location: ${ip.city || 'Unknown'}, ${ip.country || ''}. ISP: ${ip.isp || 'Unknown'}.`,
+    howWrong: `Device cost correlates with income but it's weak. Someone could use a work-issued MacBook Pro on $35k salary. Location is the strongest signal here but still misses by ±$30k routinely.`
+  });
+
+  // --- Employment type ---
+  let empLabel = 'Unknown', empConf = 35;
+  const isCorpNetwork = /amazon|microsoft|google|apple|ibm|oracle|cisco|salesforce|corp|enterprise|office|corporate/i.test(ip.isp || ip.org || '');
+  const isAWSAzureGCP = /amazon|aws|azure|google cloud|digitalocean|linode|vultr|ovh/i.test(ip.isp || ip.asn || '');
+  const isBusinessHours = behavior.hour >= 9 && behavior.hour < 18;
+  if (isCorpNetwork) { empLabel = 'Corporate employee'; empConf = 68; }
+  else if (isAWSAzureGCP) { empLabel = 'Developer / Tech worker'; empConf = 60; }
+  else if (isBusinessHours && isApple && device.cores >= 8) { empLabel = 'Knowledge worker'; empConf = 55; }
+  else if (!isBusinessHours && hasGoodGPU) { empLabel = 'Creative or Freelancer'; empConf = 40; }
+  else { empLabel = 'Residential / consumer'; empConf = 38; }
+  inferences.push({
+    label: `Employment: ${empLabel}`,
+    confidence: empConf,
+    signals: ['ISP / ASN', 'Time of day', 'Device tier'],
+    why: `IP resolves to ${ip.isp || 'residential ISP'} (ASN: ${ip.asn || 'Unknown'}). ${isCorpNetwork ? 'This ASN matches known corporate network blocks.' : isAWSAzureGCP ? 'Cloud provider IP suggests developer or technical role.' : 'Residential ISP.'}  Activity at ${behavior.timeOfDay} ${isBusinessHours ? 'aligns with business hours' : 'is outside typical work hours'}.`,
+    howWrong: 'ISP-to-employer inference is coarse. Home internet (even fiber) looks residential. VPNs completely break this. Many developers work from home on residential ISPs.'
+  });
+
+  // --- Life stage ---
+  let lifeStage = 'Unknown', lifeConf = 35;
+  if (isMobile && behavior.hour >= 22) { lifeStage = 'Likely single, no kids'; lifeConf = 42; }
+  else if (isBusinessHours && isApple && !isMobile) { lifeStage = 'Working professional'; lifeConf = 55; }
+  else if (behavior.hour >= 5 && behavior.hour <= 7) { lifeStage = 'Parent (early morning window)'; lifeConf = 45; }
+  else if (behavior.hour >= 20 && behavior.hour <= 23 && !isMobile) { lifeStage = 'Post-work downtime'; lifeConf = 48; }
+  else { lifeStage = 'Working adult'; lifeConf = 40; }
+  inferences.push({
+    label: `Life stage: ${lifeStage}`,
+    confidence: lifeConf,
+    signals: ['Time of day', 'Device type', 'Activity pattern'],
+    why: `Session at ${behavior.timeOfDay} on a ${isMobile ? 'mobile' : 'desktop'} device. ${behavior.hour >= 5 && behavior.hour <= 7 ? 'Early morning desktop browsing is a strong parent signal (kids asleep or just woke).' : ''}${isBusinessHours ? 'Mid-day desktop use suggests some schedule flexibility.' : ''}`,
+    howWrong: 'Life stage from time-of-day is pure pattern matching. Night owls, shift workers, insomniacs, and people in different timezones will all look identical to the pattern this matches.'
+  });
+
+  // --- Geographic context ---
+  const geoLabel = ip.city && ip.city !== 'Unknown'
+    ? `${ip.city}, ${ip.region}, ${ip.country}`
+    : 'Unknown location';
+  const tzMatch = ip.timezone && network.timezone && ip.timezone !== 'Unknown'
+    ? ip.timezone === network.timezone ? 'Timezone matches (no VPN detected)' : 'Timezone mismatch (possible VPN)'
+    : 'Timezone comparison unavailable';
+  inferences.push({
+    label: `Location: ${geoLabel}`,
+    confidence: ip.city && ip.city !== 'Unknown' ? 75 : 20,
+    signals: ['IP geolocation', 'Browser timezone', 'Language setting'],
+    why: `IP geolocation: ${geoLabel}. Browser timezone: ${network.timezone}. IP timezone: ${ip.timezone || 'Unknown'}. ${tzMatch}. Language preference: ${device.languages}.`,
+    howWrong: 'IP geolocation is accurate to city level about 80% of the time. VPNs, corporate proxies, and mobile data (which routes through distant carrier nodes) will all produce wrong results.'
+  });
+
+  return inferences;
+}
+
+function buildPsychographic(data) {
+  const { device, behavior, fp, ip } = data;
+  const results = [];
+
+  // Tech sophistication
+  const isFirefox = device.browser === 'Firefox';
+  const hasDNT = device.doNotTrack;
+  const isVPN = ip.timezone && data.network.timezone && ip.timezone !== data.network.timezone;
+  let techScore = 40;
+  if (isFirefox) techScore += 20;
+  if (hasDNT) techScore += 15;
+  if (isVPN) techScore += 25;
+  if (device.os.startsWith('Linux')) techScore += 20;
+  techScore = Math.min(techScore, 92);
+  results.push({
+    label: `Tech sophistication: ${techScore >= 75 ? 'High' : techScore >= 50 ? 'Medium' : 'Consumer-level'}`,
+    confidence: Math.min(techScore, 80),
+    signals: ['Browser choice', 'Do Not Track', 'OS platform', 'Timezone mismatch'],
+    why: `${isFirefox ? 'Firefox usage (privacy-aware choice), ' : ''}${hasDNT ? 'Do Not Track enabled, ' : ''}${isVPN ? 'timezone mismatch suggests VPN, ' : ''}${device.os.startsWith('Linux') ? 'Linux OS, ' : ''}${device.browser === 'Chrome' ? 'mainstream Chrome usage' : ''}. Browser choice is the single strongest tech sophistication signal.`,
+    howWrong: 'IT people often use Chrome on managed devices. Non-technical users sometimes get Firefox from a IT-recommended list. The whole "Firefox = technical" heuristic is weakening as Firefox mainstream awareness grows.'
+  });
+
+  // Privacy consciousness
+  let privScore = 10;
+  if (hasDNT) privScore += 25;
+  if (isFirefox) privScore += 20;
+  if (isVPN) privScore += 35;
+  // If audio/canvas were blocked we'd add more, but we don't have that signal
+  privScore = Math.min(privScore, 90);
+  results.push({
+    label: `Privacy consciousness: ${privScore >= 60 ? 'Active' : privScore >= 30 ? 'Passive' : 'Not apparent'}`,
+    confidence: Math.min(privScore + 10, 80),
+    signals: ['Do Not Track header', 'Browser choice', 'VPN detection'],
+    why: `Do Not Track: ${hasDNT ? 'yes' : 'no'}. ${isVPN ? 'Apparent VPN use (timezone mismatch).' : 'No VPN detected.'} ${isFirefox ? 'Firefox selection signals some privacy interest.' : ''} Ad blocker detection is unreliable without actually serving an ad, so it's omitted here.`,
+    howWrong: `DNT is widely ignored by ad networks and doesn't indicate the user actively blocks ads. A VPN timezone mismatch could just be traveling, working in a different timezone, or misconfigured system clock.`
+  });
+
+  // Big Five: Openness
+  const hour = behavior.hour;
+  const isNightOwl = hour >= 22 || hour < 4;
+  const isEarlyBird = hour >= 5 && hour < 8;
+  let openness = 50;
+  if (isFirefox || device.os.startsWith('Linux')) openness += 20;
+  if (isNightOwl) openness += 10;
+  results.push({
+    label: `Openness to experience: ${openness >= 70 ? 'Above average' : 'Average'}`,
+    confidence: 28,
+    signals: ['Browser', 'OS', 'Activity time'],
+    why: `This is almost entirely parlor trick. "${isNightOwl ? 'Night owl browsing' : 'Standard hour activity'}" + "${isFirefox ? 'non-mainstream browser' : 'mainstream browser'}" = a rough guess. Real psychographic profiling uses content consumption patterns over time, none of which we have.`,
+    howWrong: `Very wrong. We have approximately zero signal for Big Five traits. This is included to show how "confident-sounding" profiles can be generated from nearly nothing. Don't read into it.`
+  });
+
+  return results;
+}
+
+function buildInterests(data) {
+  const { device, ip, behavior } = data;
+  const categories = [];
+  const isApple = device.os.startsWith('macOS') || device.os === 'iOS';
+  const isMobile = device.touchSupport;
+  const isBusinessHours = behavior.hour >= 9 && behavior.hour < 18;
+  const isHighIncome = device.memory >= 8 || (device.dpr >= 2 && isApple);
+
+  if (isApple && !isMobile) categories.push({ name: 'Premium tech buyers', reason: 'macOS + high DPR display' });
+  if (isBusinessHours && !isMobile) categories.push({ name: 'Business decision makers', reason: 'Desktop + business hours' });
+  if (isHighIncome) categories.push({ name: 'Financial services', reason: 'High-tier device stack' });
+  if (device.browser === 'Firefox' || device.doNotTrack) categories.push({ name: 'Privacy & security tools', reason: 'Privacy-aware browser signals' });
+  if (isApple) categories.push({ name: 'Wellness & self-improvement', reason: 'Apple users over-index on this category' });
+  if (isBusinessHours && isApple) categories.push({ name: 'B2B SaaS tools', reason: 'Professional Mac + work hours' });
+  if (device.cores >= 8) categories.push({ name: 'Productivity software', reason: 'High-core-count machine' });
+  if (behavior.hour >= 20) categories.push({ name: 'Home entertainment', reason: 'Evening browsing pattern' });
+  if (isMobile) categories.push({ name: 'Mobile commerce', reason: 'Mobile device' });
+  categories.push({ name: 'News & current events', reason: 'Default cross-demographic bucket' });
+  categories.push({ name: 'Travel', reason: 'Default high-reach bucket' });
+  if (isHighIncome && isApple) categories.push({ name: 'Luxury & aspirational brands', reason: 'Apple + high device tier' });
+  if (device.os.startsWith('macOS')) categories.push({ name: 'Creative professionals', reason: 'macOS skews toward design, media, dev' });
+  if (!isMobile) categories.push({ name: 'Personal finance & investing', reason: 'Desktop, business-hour financial profile' });
+  if (isApple && isBusinessHours) categories.push({ name: 'Leadership & management content', reason: 'Professional Apple + business hours' });
+
+  return categories.slice(0, 12);
+}
+
+function buildAds(data, inferences, interests) {
+  const { device, behavior, ip } = data;
+  const isApple = device.os.startsWith('macOS') || device.os === 'iOS';
+  const isBusinessHours = behavior.hour >= 9 && behavior.hour < 18;
+  const ads = [];
+
+  const incomeInf = inferences.find(i => i.label.includes('income'));
+  const isHighIncome = incomeInf && (incomeInf.label.includes('150k') || incomeInf.label.includes('100k'));
+  const empInf = inferences.find(i => i.label.includes('Employment'));
+  const isKnowledgeWorker = empInf && (empInf.label.includes('Corporate') || empInf.label.includes('Knowledge'));
+
+  if (isKnowledgeWorker || (isApple && isBusinessHours)) {
+    ads.push(adCard(
+      "The hidden cost of being the 'nice' manager",
+      "Why agreeable leadership drains your team's velocity more than conflict does.",
+      'Leadership & management, B2B SaaS, Premium Mac users',
+      `Your device profile (${device.os}, business hours) places you in "working professional" segments that over-index on leadership content.`
+    ));
+  }
+
+  if (isApple && device.dpr >= 2) {
+    ads.push(adCard(
+      "Your team's productivity leaks. Here's where.",
+      "5,000+ teams mapped their workflow gaps in 20 minutes. Here's what they found.",
+      'B2B SaaS tools, Premium tech buyers, Business decision makers',
+      `Retina MacBook signal + business hours = high probability B2B software buyer. CPMs for this segment run $35-60.`
+    ));
+  }
+
+  if (isHighIncome || device.memory >= 8) {
+    ads.push(adCard(
+      "Private market access. Formerly invite-only.",
+      "Qualified investors are allocating to private credit and real assets outside public markets.",
+      'High income ($100k+), Financial services, Professional demographics',
+      `High device tier (${device.memory >= 8 ? device.memory + 'GB RAM' : 'Apple hardware'}) placed you in income segments that qualify for accredited investor targeting.`
+    ));
+  }
+
+  if (isApple) {
+    ads.push(adCard(
+      "Why founders over 40 are quietly restructuring their portfolios",
+      "The shift from growth to cash flow — and what your advisor isn't telling you.",
+      'Apple users, High income inferred, Financial services',
+      'Apple ecosystem = above-average wealth signal. This creative runs on that segment alone with no other targeting.'
+    ));
+  }
+
+  if (device.doNotTrack || device.browser === 'Firefox') {
+    ads.push(adCard(
+      "You care about privacy. Your VPN provider doesn't.",
+      "The VPN industry has a logging problem nobody talks about. Here's how to check.",
+      'Privacy-conscious users, Firefox + DNT signals, Security tools',
+      `Do Not Track enabled + Firefox = advertisers who specifically target privacy-aware audiences (often cybersecurity, VPN, and identity protection products).`
+    ));
+  }
+
+  if (ads.length < 3) {
+    ads.push(adCard(
+      "From side project to $10k MRR: A realistic 90-day framework",
+      "No growth hacks. No overnight success. What actually moved the needle for 300 indie builders.",
+      'Tech workers, Self-improvement, Developer demographics',
+      'Fallback creative for tech-adjacent demographics. Indie hacker / builder content over-performs on technical audiences.'
+    ));
+  }
+
+  return ads;
+}
+
+function computeExposureScore(data) {
+  const { device, fp } = data;
+  let score = 0;
+  if (fp.canvasHash !== 'blocked') score += 20;
+  if (fp.webglRenderer !== 'Unknown') score += 15;
+  if (fp.audioHash !== 'blocked') score += 15;
+  if (device.dpr !== 1) score += 5;
+  if (device.memory !== 'Unknown') score += 5;
+  if (device.cores !== 'Unknown') score += 5;
+  if (fp.fonts.length > 8) score += 10;
+  else if (fp.fonts.length > 3) score += 5;
+  if (!device.doNotTrack) score += 5;
+  if (device.platform !== 'Unknown') score += 5;
+  if (device.languages) score += 5;
+  if (device.cookiesEnabled) score += 5;
+  score = Math.min(score, 98);
+  return score;
+}
+
+// ─── SCAN ORCHESTRATION ────────────────────────────────────────────────────────
+
+const scanSteps = [
+  { label: 'Reading browser identity...', pct: 8, fn: 'device' },
+  { label: 'Detecting hardware signals...', pct: 18, fn: 'device2' },
+  { label: 'Running canvas fingerprint...', pct: 30, fn: 'fp1' },
+  { label: 'Sampling WebGL renderer...', pct: 42, fn: 'fp2' },
+  { label: 'Audio context fingerprint...', pct: 52, fn: 'fp3' },
+  { label: 'Detecting installed fonts...', pct: 62, fn: 'fp4' },
+  { label: 'Geolocating your IP...', pct: 74, fn: 'ip' },
+  { label: 'Analyzing behavioral signals...', pct: 84, fn: 'behavior' },
+  { label: 'Inferring demographics...', pct: 92, fn: 'infer' },
+  { label: 'Building your profile...', pct: 100, fn: 'done' },
+];
+
+function logScan(msg) {
+  const el = document.getElementById('scanLog');
+  const line = document.createElement('div');
+  line.textContent = '> ' + msg;
+  line.style.color = '#58a6ff';
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function startScan() {
+  try {
+  document.getElementById('landing').classList.add('hidden');
+  document.getElementById('scanning').classList.remove('hidden');
+
+  const progress = document.getElementById('scanProgress');
+  const status = document.getElementById('scanStatus');
+
+  function setProgress(pct, label) {
+    progress.style.width = pct + '%';
+    status.textContent = label;
+    logScan(label);
+  }
+
+  setProgress(5, 'Collecting browser signals...');
+  scanData.device = collectDevice();
+  await delay(300);
+
+  setProgress(20, 'Reading hardware fingerprints...');
+  scanData.network = collectNetwork();
+  await delay(250);
+
+  setProgress(40, 'Running fingerprint tests...');
+  scanData.fp = await collectFingerprints();
+  await delay(400);
+
+  setProgress(65, 'Geolocating your IP address...');
+  scanData.ip = await collectIPData();
+  await delay(200);
+
+  setProgress(80, 'Analyzing behavioral signals...');
+  scanData.behavior = collectBehavior();
+  await delay(300);
+
+  setProgress(92, 'Inferring demographics...');
+  await delay(400);
+
+  setProgress(100, 'Profile complete.');
+  await delay(600);
+
+  renderResults();
+  } catch (err) {
+    document.getElementById('scanning').classList.add('hidden');
+    document.getElementById('landing').classList.remove('hidden');
+    alert('Scan error: ' + err.message + '\n\nTry opening via localhost instead of file://');
+    console.error(err);
+  }
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ─── RENDER ────────────────────────────────────────────────────────────────────
+
+async function renderResults() {
+  document.getElementById('scanning').classList.add('hidden');
+  document.getElementById('results').classList.remove('hidden');
+
+  const { device, network, fp, behavior, ip } = scanData;
+
+  // Fingerprint display
+  document.getElementById('fingerprintDisplay').textContent = fp.fingerprint;
+  const score = computeExposureScore(scanData);
+  const uniqueness = score >= 80 ? 'Highly unique (top 5%)' :
+                     score >= 60 ? 'Fairly unique (top 20%)' :
+                     score >= 40 ? 'Moderately unique' : 'Common profile';
+  document.getElementById('uniquenessDisplay').textContent = uniqueness;
+
+  // Exposure score gauge
+  setTimeout(() => {
+    const circle = document.getElementById('scoreCircle');
+    const circumference = 2 * Math.PI * 15.9;
+    const fill = (score / 100) * circumference;
+    circle.setAttribute('stroke-dasharray', `${fill} ${circumference}`);
+    animateNumber('scoreNumber', 0, score, 1500);
+  }, 300);
+  document.getElementById('scoreLabel').textContent =
+    score >= 80 ? 'High Exposure' : score >= 55 ? 'Moderate Exposure' : 'Lower Exposure';
+  document.getElementById('scoreDesc').textContent =
+    score >= 80
+      ? 'Your browser emits a rich set of identifying signals. An ad network could reliably single you out across unrelated sites.'
+      : score >= 55
+      ? 'Your browser has enough unique signals for probabilistic cross-site tracking, but some fingerprint-resistant settings are helping.'
+      : 'Some fingerprinting signals are blocked or unavailable. You\'re harder to track, but not invisible.';
+
+  // Device signals
+  document.getElementById('deviceSignals').innerHTML = [
+    signalRow('OS', device.os),
+    signalRow('Browser', `${device.browser} ${device.version}`),
+    signalRow('Screen', device.screen),
+    signalRow('DPR', device.dpr + 'x'),
+    signalRow('Viewport', device.viewport),
+    signalRow('CPU cores', device.cores),
+    signalRow('Memory', device.memory !== 'Unknown' ? device.memory + ' GB' : 'Unknown'),
+    signalRow('Touch', device.touchSupport ? `Yes (${device.maxTouchPoints} points)` : 'No'),
+    signalRow('Platform', device.platform),
+    signalRow('Do Not Track', device.doNotTrack ? 'Enabled' : 'Off', device.doNotTrack ? 'text-green-400' : 'text-warn'),
+    signalRow('Cookies', device.cookiesEnabled ? 'Enabled' : 'Blocked'),
+  ].join('');
+
+  // Network signals
+  document.getElementById('networkSignals').innerHTML = [
+    signalRow('IP', ip.ip || 'Unavailable'),
+    signalRow('City', ip.city || 'Unknown'),
+    signalRow('Region', `${ip.region || 'Unknown'}, ${ip.country || ''}`),
+    signalRow('ISP', ip.isp || 'Unknown'),
+    signalRow('ASN', ip.asn || 'Unknown'),
+    signalRow('Browser TZ', network.timezone),
+    signalRow('IP TZ', ip.timezone || 'Unknown'),
+    signalRow('TZ Match', ip.timezone && network.timezone && ip.timezone !== 'Unknown'
+      ? (ip.timezone === network.timezone ? 'Yes (no VPN detected)' : 'NO — possible VPN')
+      : 'Unknown', ip.timezone === network.timezone ? 'text-green-400' : 'text-warn'),
+    signalRow('Languages', device.languages),
+    signalRow('Referrer', network.referrer),
+    signalRow('Connection', network.connection),
+  ].join('');
+
+  // Fingerprint signals
+  document.getElementById('fingerprintSignals').innerHTML = [
+    signalRow('Canvas hash', fp.canvasHash, fp.canvasHash === 'blocked' ? 'text-green-400' : 'text-warn'),
+    signalRow('Audio hash', fp.audioHash, fp.audioHash === 'blocked' ? 'text-green-400' : 'text-warn'),
+    signalRow('GPU renderer', fp.webglRenderer.slice(0, 40) + (fp.webglRenderer.length > 40 ? '...' : '')),
+    signalRow('GPU vendor', fp.webglVendor),
+    signalRow('Fonts detected', fp.fonts.length + ' of 20 tested'),
+    signalRow('Font list', fp.fonts.slice(0, 5).join(', ') + (fp.fonts.length > 5 ? '...' : '')),
+    signalRow('Combined ID', fp.fingerprint),
+  ].join('');
+
+  // Behavior signals
+  const dwellSec = Math.round(behavior.dwellMs / 1000);
+  document.getElementById('behaviorSignals').innerHTML = [
+    signalRow('Time of day', behavior.timeOfDay),
+    signalRow('Dwell before scan', dwellSec + 's'),
+    signalRow('Mouse events', behavior.mouseMovements + ' tracked'),
+    signalRow('Mouse entropy', behavior.mouseEntropy + ' (jitter score)'),
+    signalRow('Scroll events', behavior.scrollEvents + ''),
+    signalRow('Clicks', behavior.clickCount + ''),
+    signalRow('Session hour', new Date().getHours() + ':00'),
+  ].join('');
+
+  // Inferences
+  const inferences = buildInferences(scanData);
+  document.getElementById('inferences').innerHTML = inferences.map(i =>
+    inferenceCard(i.label, i.confidence, i.why, i.howWrong, i.signals)
+  ).join('');
+
+  // Psychographic
+  const psycho = buildPsychographic(scanData);
+  document.getElementById('psychographic').innerHTML = psycho.map(i =>
+    inferenceCard(i.label, i.confidence, i.why, i.howWrong, i.signals)
+  ).join('');
+
+  // Interests
+  const interests = buildInterests(scanData);
+  document.getElementById('interests').innerHTML = interests.map(i =>
+    `<span class="signal-tag" style="color:#e6edf3;border-color:#58a6ff">${i.name}</span>`
+  ).join('');
+  document.getElementById('interestDetails').innerHTML = interests.map(i =>
+    `<div class="flex justify-between items-center text-sm">
+       <span class="text-muted">${i.name}</span>
+       <span class="text-xs text-muted/70">${i.reason}</span>
+     </div>`
+  ).join('');
+
+  // Ads
+  const ads = buildAds(scanData, inferences, interests);
+  document.getElementById('adCards').innerHTML = ads.join('');
+
+  // Defense guide
+  document.getElementById('defenseGuide').innerHTML = [
+    defenseCard('uBlock Origin', 'The single highest-impact thing. Blocks most tracking pixels, fingerprinting scripts, and ad network calls.', 'https://ublockorigin.com'),
+    defenseCard('Firefox + Strict Mode', 'Blocks third-party cookies and fingerprinting by default. Better defaults than Chrome out of the box.', null),
+    defenseCard('Firefox Multi-Account Containers', 'Isolates sites into separate cookie jars. Your banking tab can\'t see your shopping tab.', null),
+    defenseCard('Mullvad or ProtonVPN', 'Masks your IP and ISP. Breaks most IP-based geolocation and ISP inference. Won\'t stop fingerprinting.', null),
+    defenseCard('Canvas Blocker (extension)', 'Randomizes canvas, WebGL, and audio fingerprints. Makes the fingerprint meaningless.', null),
+    defenseCard('Brave Browser', 'Fingerprint randomization built in. Good default choice if you don\'t want to configure Firefox.', null),
+  ].join('');
+
+  // Store globally for export
+  window._profileData = { device, network, fp: { ...fp, fonts: fp.fonts }, behavior, ip, inferences, interests, score };
+}
+
+function defenseCard(title, desc, url) {
+  return `<div class="card p-4">
+    <div class="font-semibold mb-1 text-accent">${title}</div>
+    <div class="text-muted text-xs leading-relaxed">${desc}</div>
+  </div>`;
+}
+
+function animateNumber(id, from, to, duration) {
+  const el = document.getElementById(id);
+  const start = performance.now();
+  function step(now) {
+    const progress = Math.min((now - start) / duration, 1);
+    el.textContent = Math.round(from + (to - from) * progress);
+    if (progress < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function exportProfile() {
+  if (!window._profileData) return;
+  const blob = new Blob([JSON.stringify(window._profileData, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'browser-profile.json';
+  a.click();
+}
+</script>
+</body>
+</html>
