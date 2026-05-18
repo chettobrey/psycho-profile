@@ -768,71 +768,106 @@ function buildInterests(data) {
 }
 
 function buildAds(data, inferences, interests) {
-  const { device, behavior, ip } = data;
-  const isApple = device.os.startsWith('macOS') || device.os === 'iOS';
-  const isBusinessHours = behavior.hour >= 9 && behavior.hour < 18;
-  const ads = [];
+  const interestNames = interests.map(i => i.name);
 
-  const incomeInf = inferences.find(i => i.label.includes('income'));
-  const isHighIncome = incomeInf && (incomeInf.label.includes('150k') || incomeInf.label.includes('100k'));
-  const empInf = inferences.find(i => i.label.includes('Employment'));
-  const isKnowledgeWorker = empInf && (empInf.label.includes('Corporate') || empInf.label.includes('Knowledge'));
+  const pool = [
+    { cats: ['PC Gaming'],
+      card: adCard('The GPU you actually want is back in stock', 'RTX 5080. Notify me when it ships.', 'PC Gaming, Consumer Electronics', 'Dedicated GPU detected in browser fingerprint.') },
+    { cats: ['PC Gaming'],
+      card: adCard('Your team started without you.', 'Deadlock. 40 million players. Still free.', 'PC Gaming, Windows users', 'Windows + high-end GPU = gaming segment.') },
+    { cats: ['Sports'],
+      card: adCard('Every game. One app.', 'ESPN+. Live sports from $11/month. Cancel anytime.', 'Sports, Streaming & TV', 'Evening and weekend browsing pattern.') },
+    { cats: ['Sports', 'Health & Fitness'],
+      card: adCard('Know when you\'re actually recovered.', 'Whoop 5.0. Recovery, strain, and sleep. No screen.', 'Sports, Health & Fitness', 'Sports and fitness interest overlap.') },
+    { cats: ['Streaming & TV'],
+      card: adCard('Stop paying for four services you barely use.', 'Plex. Your own media, one app, free.', 'Streaming & TV, Technology & Computing', 'Evening usage and tech signals.') },
+    { cats: ['Streaming & TV', 'Music'],
+      card: adCard('Watch it before someone spoils it.', 'Max. Stream the shows people are actually talking about.', 'Streaming & TV', 'Evening leisure browsing detected.') },
+    { cats: ['Food & Dining'],
+      card: adCard('Groceries in 15 minutes.', 'Gopuff. Snacks, drinks, household stuff. First delivery free.', 'Food & Dining, Urban location', 'Urban IP location signal.') },
+    { cats: ['Food & Dining', 'Home & Garden'],
+      card: adCard('Dinner sorted.', 'HelloFresh. 40% off your first box. Skip anytime.', 'Food & Dining, Home & Garden', 'Evening home browsing.') },
+    { cats: ['Travel'],
+      card: adCard('Flight prices drop on Tuesdays. It\'s Tuesday.', 'Google Flights. Set a price alert in 30 seconds.', 'Travel', 'Travel interest detected.') },
+    { cats: ['Travel'],
+      card: adCard('60,000 points. $95 a year.', 'Chase Sapphire Preferred. Points for travel, dining, and everything else.', 'Travel, Personal Finance & Investing', 'Travel and finance interest overlap.') },
+    { cats: ['Health & Fitness'],
+      card: adCard('The gym isn\'t the only option.', 'Peloton app. 3,000 classes. No bike needed. $12.99/month.', 'Health & Fitness', 'Fitness interest signal.') },
+    { cats: ['Health & Fitness'],
+      card: adCard('You\'re probably not getting enough protein.', 'Momentous. NSF certified. Used by pro teams.', 'Health & Fitness', 'Health interest + active browsing pattern.') },
+    { cats: ['Home & Garden'],
+      card: adCard('Your Wi-Fi is the problem.', 'Eero Pro 7. Whole-home mesh. Setup in 10 minutes.', 'Home & Garden, Consumer Electronics', 'Desktop home user signals.') },
+    { cats: ['Home & Garden'],
+      card: adCard('The sofa you\'ve been putting off.', 'Wayfair. Up to 60% off. Free shipping on most orders.', 'Home & Garden', 'Weekend home browsing pattern.') },
+    { cats: ['Parenting & Family'],
+      card: adCard('Bedtime in 20 minutes. Good luck.', 'Hatch. The sleep clock every parent wishes they had sooner.', 'Parenting & Family', 'Early-morning and evening desktop pattern.') },
+    { cats: ['Parenting & Family'],
+      card: adCard('The photos are piling up. Make something with them.', 'Artifact. Auto photo books from your camera roll.', 'Parenting & Family', 'Life stage signals: parent window.') },
+    { cats: ['Fashion & Apparel'],
+      card: adCard('The hoodie you\'ll wear for a decade.', 'Everlane. Transparent pricing, ethical factories.', 'Fashion & Apparel', 'Fashion interest signal.') },
+    { cats: ['Fashion & Apparel'],
+      card: adCard('Free returns. Obviously.', 'Nordstrom Rack. Up to 70% off. New arrivals daily.', 'Fashion & Apparel', 'Apparel interest and mobile browsing pattern.') },
+    { cats: ['Automotive'],
+      card: adCard('You\'re overpaying for car insurance.', 'Jerry. Compare 50 carriers in 45 seconds. Average savings: $887/year.', 'Automotive', 'Automotive interest signal.') },
+    { cats: ['Automotive'],
+      card: adCard('The test drive comes to you.', 'Carvana. Buy a car online. 7-day return window.', 'Automotive', 'Automotive interest detected.') },
+    { cats: ['Pets'],
+      card: adCard('They eat better than you do.', 'Ollie. Fresh dog food, vet-formulated, delivered. First box 50% off.', 'Pets', 'Pet owner behavioral signals.') },
+    { cats: ['Pets'],
+      card: adCard('The vet visit they won\'t dread.', 'Bond Vet. Same-day appointments. No waiting room chaos.', 'Pets', 'Pet owner and urban location signals.') },
+    { cats: ['Outdoors & Adventure'],
+      card: adCard('The trail isn\'t going to hike itself.', 'AllTrails Pro. Offline maps, wrong-turn alerts. $35/year.', 'Outdoors & Adventure', 'Weekend and non-urban location signals.') },
+    { cats: ['Outdoors & Adventure'],
+      card: adCard('Camping without the prep stress.', 'Hipcamp. Private land, scenic spots. Book in minutes.', 'Outdoors & Adventure', 'Weekend browsing and location signals.') },
+    { cats: ['Privacy & Security Tools', 'Technology & Computing'],
+      card: adCard('Your VPN provider logs everything.', 'Mullvad. No email, no account, no logs. 5/month, cash accepted.', 'Privacy & Security Tools', 'Do Not Track + browser flags privacy interest.') },
+    { cats: ['Software & Developer Tools'],
+      card: adCard('Ship faster. Break less.', 'Sentry. Error monitoring that tells you what actually broke. Free tier available.', 'Software & Developer Tools', 'Developer OS, browser, and hardware signals.') },
+    { cats: ['Software & Developer Tools'],
+      card: adCard('Your local dev environment is a liability.', 'GitHub Codespaces. Your full dev environment in a browser tab.', 'Software & Developer Tools', 'Developer profile detected.') },
+    { cats: ['Personal Finance & Investing'],
+      card: adCard('Your savings account is losing to inflation.', 'Marcus by Goldman Sachs. 4.5% APY. No minimum.', 'Personal Finance & Investing', 'Finance interest and desktop context.') },
+    { cats: ['Personal Finance & Investing'],
+      card: adCard('File your taxes yourself this year.', 'FreeTaxUSA. Federal free, state $14.99. Actually free.', 'Personal Finance & Investing', 'Finance interest signal.') },
+    { cats: ['Business & Entrepreneurship', 'B2B Software & SaaS'],
+      card: adCard('That meeting could have been a Loom.', 'Record your screen. Share a link. No scheduling required.', 'B2B Software & SaaS, Business', 'Professional desktop usage during business hours.') },
+    { cats: ['Arts & Design'],
+      card: adCard('Your design skills are holding your ideas back.', 'Figma. Design, prototype, ship. Free for individuals.', 'Arts & Design, Software & Developer Tools', 'Creative Mac and design interest signals.') },
+    { cats: ['Photography & Video'],
+      card: adCard('RAW files don\'t organize themselves.', 'Lightroom. Edit, organize, sync. $10/month.', 'Photography & Video', 'Creative platform and high-spec hardware.') },
+    { cats: ['Music'],
+      card: adCard('Three months of Spotify Premium. Free.', 'No credit card. Cancel before it charges.', 'Music, Streaming & TV', 'Music interest signal.') },
+    { cats: ['Online Learning', 'Technology & Computing'],
+      card: adCard('Learn something useful this weekend.', 'Brilliant. Math, data science, CS. 15 minutes a day.', 'Online Learning, Technology & Computing', 'Tech-engaged profile signals.') },
+    { cats: ['Podcasts & Audio'],
+      card: adCard('You\'ll listen to all six episodes in one sitting.', 'Wondery+. No ads. Every show. $4.99/month.', 'Podcasts & Audio', 'Mobile and early-morning consumption signals.') },
+    { cats: ['Science & Research'],
+      card: adCard('The smartest newsletter you\'ll actually read.', 'Quanta Magazine. Free. No paywall. Just good science writing.', 'Science & Research, Online Learning', 'Technical profile signals.') },
+    { cats: ['News & Current Events'],
+      card: adCard('The news, without the hot takes.', 'The Dispatch. Reporting that explains what actually happened.', 'News & Current Events', 'Default news segment.') },
+    { cats: ['News & Current Events'],
+      card: adCard('Read smarter in 5 minutes.', 'Morning Brew. Free daily newsletter. 4 million readers.', 'News & Current Events', 'Morning browsing pattern.') },
+    { cats: ['Luxury & Premium Brands'],
+      card: adCard('The watch list, not the waiting list.', 'Chrono24. Buy and sell certified pre-owned watches.', 'Luxury & Premium Brands', 'High-tier device and income inference.') },
+  ];
 
-  if (isKnowledgeWorker || (isApple && isBusinessHours)) {
-    ads.push(adCard(
-      "The hidden cost of being the 'nice' manager",
-      "Why agreeable leadership drains your team's velocity more than conflict does.",
-      'Leadership & management, B2B SaaS, Premium Mac users',
-      `Your device profile (${device.os}, business hours) places you in "working professional" segments that over-index on leadership content.`
-    ));
+  // Score each ad by how many of its tags match the user's computed interests
+  const scored = pool
+    .map(a => ({ ...a, score: a.cats.filter(c => interestNames.includes(c)).length }))
+    .sort((a, b) => b.score - a.score);
+
+  // Pick top 4, avoiding duplicate primary categories
+  const selected = [];
+  const usedPrimary = new Set();
+  for (const ad of scored) {
+    if (selected.length >= 4) break;
+    if (!usedPrimary.has(ad.cats[0])) {
+      selected.push(ad.card);
+      ad.cats.forEach(c => usedPrimary.add(c));
+    }
   }
 
-  if (isApple && device.dpr >= 2) {
-    ads.push(adCard(
-      "Your team's productivity leaks. Here's where.",
-      "5,000+ teams mapped their workflow gaps in 20 minutes. Here's what they found.",
-      'B2B SaaS tools, Premium tech buyers, Business decision makers',
-      `Retina MacBook signal + business hours = high probability B2B software buyer. CPMs for this segment run $35-60.`
-    ));
-  }
-
-  if (isHighIncome || device.memory >= 8) {
-    ads.push(adCard(
-      "Private market access. Formerly invite-only.",
-      "Qualified investors are allocating to private credit and real assets outside public markets.",
-      'High income ($100k+), Financial services, Professional demographics',
-      `High device tier (${device.memory >= 8 ? device.memory + 'GB RAM' : 'Apple hardware'}) placed you in income segments that qualify for accredited investor targeting.`
-    ));
-  }
-
-  if (isApple) {
-    ads.push(adCard(
-      "Why founders over 40 are quietly restructuring their portfolios",
-      "The shift from growth to cash flow — and what your advisor isn't telling you.",
-      'Apple users, High income inferred, Financial services',
-      'Apple ecosystem = above-average wealth signal. This creative runs on that segment alone with no other targeting.'
-    ));
-  }
-
-  if (device.doNotTrack || device.browser === 'Firefox') {
-    ads.push(adCard(
-      "You care about privacy. Your VPN provider doesn't.",
-      "The VPN industry has a logging problem nobody talks about. Here's how to check.",
-      'Privacy-conscious users, Firefox + DNT signals, Security tools',
-      `Do Not Track enabled + Firefox = advertisers who specifically target privacy-aware audiences (often cybersecurity, VPN, and identity protection products).`
-    ));
-  }
-
-  if (ads.length < 3) {
-    ads.push(adCard(
-      "From side project to $10k MRR: A realistic 90-day framework",
-      "No growth hacks. No overnight success. What actually moved the needle for 300 indie builders.",
-      'Tech workers, Self-improvement, Developer demographics',
-      'Fallback creative for tech-adjacent demographics. Indie hacker / builder content over-performs on technical audiences.'
-    ));
-  }
-
-  return ads;
+  return selected;
 }
 
 function computeExposureScore(data) {
