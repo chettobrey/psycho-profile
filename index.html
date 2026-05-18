@@ -690,30 +690,81 @@ function buildPsychographic(data) {
 }
 
 function buildInterests(data) {
-  const { device, ip, behavior } = data;
-  const categories = [];
-  const isApple = device.os.startsWith('macOS') || device.os === 'iOS';
-  const isMobile = device.touchSupport;
-  const isBusinessHours = behavior.hour >= 9 && behavior.hour < 18;
-  const isHighIncome = device.memory >= 8 || (device.dpr >= 2 && isApple);
+  const { device, network, fp, ip, behavior } = data;
 
-  if (isApple && !isMobile) categories.push({ name: 'Premium tech buyers', reason: 'macOS + high DPR display' });
-  if (isBusinessHours && !isMobile) categories.push({ name: 'Business decision makers', reason: 'Desktop + business hours' });
-  if (isHighIncome) categories.push({ name: 'Financial services', reason: 'High-tier device stack' });
-  if (device.browser === 'Firefox' || device.doNotTrack) categories.push({ name: 'Privacy & security tools', reason: 'Privacy-aware browser signals' });
-  if (isApple) categories.push({ name: 'Wellness & self-improvement', reason: 'Apple users over-index on this category' });
-  if (isBusinessHours && isApple) categories.push({ name: 'B2B SaaS tools', reason: 'Professional Mac + work hours' });
-  if (device.cores >= 8) categories.push({ name: 'Productivity software', reason: 'High-core-count machine' });
-  if (behavior.hour >= 20) categories.push({ name: 'Home entertainment', reason: 'Evening browsing pattern' });
-  if (isMobile) categories.push({ name: 'Mobile commerce', reason: 'Mobile device' });
-  categories.push({ name: 'News & current events', reason: 'Default cross-demographic bucket' });
-  categories.push({ name: 'Travel', reason: 'Default high-reach bucket' });
-  if (isHighIncome && isApple) categories.push({ name: 'Luxury & aspirational brands', reason: 'Apple + high device tier' });
-  if (device.os.startsWith('macOS')) categories.push({ name: 'Creative professionals', reason: 'macOS skews toward design, media, dev' });
-  if (!isMobile) categories.push({ name: 'Personal finance & investing', reason: 'Desktop, business-hour financial profile' });
-  if (isApple && isBusinessHours) categories.push({ name: 'Leadership & management content', reason: 'Professional Apple + business hours' });
+  const isAppleDesktop = device.os.startsWith('macOS');
+  const isAppleMobile  = device.os === 'iOS';
+  const isApple        = isAppleDesktop || isAppleMobile;
+  const isWindows      = device.os.startsWith('Windows');
+  const isLinux        = device.os.startsWith('Linux');
+  const isAndroid      = device.os.startsWith('Android');
+  const isMobile       = device.touchSupport && (isAppleMobile || isAndroid);
+  const isRetina       = device.dpr >= 2;
+  const isHighSpec     = device.cores >= 8 || device.memory >= 16;
+  const isHighIncome   = (isApple && isRetina) || device.memory >= 16 || device.cores >= 12;
+  const isGaming       = isWindows && isHighSpec && fp.webglRenderer && !/Intel|llvmpipe|SwiftShader/i.test(fp.webglRenderer);
+  const isDeveloper    = isLinux || (device.browser === 'Firefox' && isHighSpec) || /aws|digitalocean|linode|github|google cloud/i.test(ip.isp || '');
+  const isCreative     = isAppleDesktop && isRetina;
+  const isPrivacyMinded = device.doNotTrack || device.browser === 'Firefox';
+  const isUrban        = ['New York','Los Angeles','Chicago','San Francisco','Seattle','Boston','Austin','Miami','Denver','Atlanta','Portland','Nashville','Minneapolis','Philadelphia','San Diego'].some(c => (ip.city || '').includes(c));
 
-  return categories.slice(0, 12);
+  const h = behavior.hour;
+  const isEarlyMorning  = h >= 5  && h < 9;
+  const isBusinessHours = h >= 9  && h < 18;
+  const isEvening       = h >= 18 && h < 23;
+  const isLateNight     = h >= 23 || h < 4;
+  const isWeekend       = [0,6].includes(new Date().getDay());
+  const richFontStack   = fp?.fonts?.length > 12;
+
+  const pool = [
+    // Technology
+    { name: 'Technology & Computing',    score: 30 + (isDeveloper?40:0) + (isHighSpec?10:0) + (isPrivacyMinded?10:0),  reason: 'Device signals indicate tech-engaged user' },
+    { name: 'Privacy & Security Tools',  score: (isPrivacyMinded?65:5) + (isDeveloper?20:0),                           reason: 'Privacy-aware browser and tracking signals' },
+    { name: 'Software & Developer Tools',score: (isDeveloper?70:0) + (isLinux?20:0) + (isHighSpec?10:0),               reason: 'Technical OS, browser, and hardware signals' },
+    { name: 'Consumer Electronics',      score: 25 + (isApple?20:0) + (isHighSpec?15:0) + (isGaming?10:0),            reason: 'Hardware tier and platform' },
+    { name: 'PC Gaming',                 score: (isGaming?70:0) + (isWindows&&isEvening?15:0) + (isWeekend?10:0),     reason: 'Windows + dedicated GPU + off-hours usage' },
+
+    // Business & Finance
+    { name: 'Business & Entrepreneurship', score: 15 + (isBusinessHours&&!isMobile?30:0) + (isAppleDesktop?15:0),     reason: 'Desktop + business-hours activity' },
+    { name: 'Personal Finance & Investing',score: 20 + (isHighIncome?25:0) + (!isMobile?15:0),                        reason: 'Device tier and desktop context' },
+    { name: 'B2B Software & SaaS',        score: (isBusinessHours&&!isMobile?30:0) + (isAppleDesktop?25:0) + (isHighSpec?10:0), reason: 'Professional desktop during work hours' },
+    { name: 'Real Estate',                 score: 10 + (isHighIncome?20:0) + (isUrban?20:0) + (isWeekend?10:0),       reason: 'Income signals and urban location' },
+    { name: 'Careers & Professional Dev',  score: 10 + (isBusinessHours&&!isMobile?20:0) + (isEarlyMorning?15:0),    reason: 'Professional browsing context' },
+
+    // Lifestyle
+    { name: 'Health & Fitness',    score: 20 + (isApple?20:0) + (isEarlyMorning?20:0) + (isMobile?10:0),             reason: 'Apple users and early-morning activity over-index here' },
+    { name: 'Food & Dining',       score: 20 + (isUrban?25:0) + (isEvening?15:0) + (isMobile?10:0),                  reason: 'Urban location and evening browsing' },
+    { name: 'Travel',              score: 30 + (isHighIncome?20:0) + (isUrban?10:0),                                  reason: 'Default high-reach bucket, boosted by income signal' },
+    { name: 'Home & Garden',       score: 5  + (isEvening&&!isMobile?25:0) + (isWeekend?25:0) + (isHighIncome?10:0), reason: 'Evening and weekend desktop context' },
+    { name: 'Parenting & Family',  score: 5  + (isEarlyMorning?30:0) + (isEvening&&!isMobile?15:0),                  reason: 'Early-morning and evening desktop patterns' },
+    { name: 'Fashion & Apparel',   score: 10 + (isAppleMobile?30:0) + (isHighIncome?10:0) + (isEvening?10:0),        reason: 'Mobile Apple and evening browsing' },
+    { name: 'Automotive',          score: 15 + (isHighIncome?15:0) + (isWindows?15:0) + (!isUrban?20:0),             reason: 'Income signals; skews suburban and Windows' },
+    { name: 'Pets',                score: 5  + (isEvening&&!isMobile?20:0) + (isWeekend?15:0) + (!isUrban?10:0),     reason: 'Evening home browsing and suburban location' },
+    { name: 'Outdoors & Adventure',score: 10 + (isWeekend?20:0) + (!isUrban?20:0) + (isAndroid?10:0),               reason: 'Weekend activity and non-urban location' },
+
+    // Entertainment
+    { name: 'News & Current Events',  score: 35 + (isEarlyMorning?15:0) + (isBusinessHours?10:0),                   reason: 'Default broad-reach bucket' },
+    { name: 'Streaming & TV',         score: 15 + (isEvening?30:0) + (isLateNight?25:0) + (isMobile?10:0),          reason: 'Evening and late-night consumption pattern' },
+    { name: 'Sports',                 score: 15 + (isEvening?15:0) + (isWeekend?25:0) + (isAndroid?10:0),           reason: 'Evening and weekend signals' },
+    { name: 'Music',                  score: 15 + (isCreative?15:0) + (isLateNight?20:0) + (isMobile?15:0),         reason: 'Creative profile and late-night or mobile usage' },
+    { name: 'Podcasts & Audio',       score: 10 + (isEarlyMorning?20:0) + (isMobile?15:0) + (isApple?10:0),         reason: 'Commute-hour and mobile signals' },
+
+    // Creative
+    { name: 'Arts & Design',          score: (isCreative?55:0) + (richFontStack?15:0) + (isAppleDesktop?10:0),       reason: 'High-res Mac and diverse installed font stack' },
+    { name: 'Photography & Video',    score: (isCreative?45:0) + (isHighSpec?15:0),                                  reason: 'Creative platform and high-spec hardware' },
+
+    // Premium
+    { name: 'Luxury & Premium Brands',score: (isHighIncome?45:0) + (isUrban?15:0) + (isAppleDesktop&&isRetina?15:0), reason: 'Device tier, income inference, and urban location' },
+
+    // Education
+    { name: 'Online Learning',        score: 15 + (isDeveloper?15:0) + (isHighSpec?10:0),                            reason: 'Default mid-reach bucket' },
+    { name: 'Science & Research',     score: (isDeveloper?30:0) + (isLinux?25:0) + (isHighSpec?10:0),               reason: 'Technical platform signals' },
+  ];
+
+  return pool
+    .filter(c => c.score >= 20)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12);
 }
 
 function buildAds(data, inferences, interests) {
