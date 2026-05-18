@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Who Does Your Browser Think You Are?</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -42,6 +44,7 @@
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     .glitch { position: relative; }
     @media (max-width: 640px) { .grid-cols-responsive { grid-template-columns: 1fr !important; } }
+    .map-label { background: #161b22; border: 1px solid #30363d; color: #e6edf3; font-size: 11px; font-family: 'SF Mono', monospace; box-shadow: none; }
   </style>
 </head>
 <body class="min-h-screen">
@@ -148,6 +151,7 @@
           <span class="text-accent">02</span> Location &amp; Network
         </h3>
         <div id="networkSignals" class="space-y-3 text-sm"></div>
+        <div id="ipMap" class="hidden mt-4 rounded-lg overflow-hidden" style="height:160px"></div>
       </div>
 
       <!-- Fingerprinting -->
@@ -476,27 +480,50 @@ function collectBehavior() {
 }
 
 async function collectIPData() {
-  try {
-    const res = await fetch('https://ipwho.is/', { signal: AbortSignal.timeout(5000) });
-    const d = await res.json();
-    if (!d.success) throw new Error('failed');
-    return {
-      ip: d.ip,
-      city: d.city,
-      region: d.region,
-      country: d.country,
-      isp: d.connection?.isp || d.org || 'Unknown',
-      asn: d.connection?.asn ? 'AS' + d.connection.asn : 'Unknown',
-      org: d.connection?.org || 'Unknown',
-      timezone: d.timezone?.id || 'Unknown',
-      lat: d.latitude,
-      lon: d.longitude,
-      postal: d.postal,
-    };
-  } catch (e) {
-    return { ip: 'Unavailable', city: 'Unknown', region: 'Unknown', country: 'Unknown',
-             isp: 'Unknown', asn: 'Unknown', org: 'Unknown', timezone: 'Unknown' };
+  const apis = [
+    async () => {
+      const res = await fetch('https://ipwho.is/', { signal: AbortSignal.timeout(5000) });
+      const d = await res.json();
+      if (!d.success) throw new Error('failed');
+      return {
+        ip: d.ip, city: d.city, region: d.region, country: d.country,
+        isp: d.connection?.isp || d.org || 'Unknown',
+        asn: d.connection?.asn ? 'AS' + d.connection.asn : 'Unknown',
+        org: d.connection?.org || 'Unknown',
+        timezone: d.timezone?.id || 'Unknown',
+        lat: d.latitude, lon: d.longitude, postal: d.postal,
+      };
+    },
+    async () => {
+      const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(5000) });
+      const d = await res.json();
+      if (d.error) throw new Error('failed');
+      return {
+        ip: d.ip, city: d.city, region: d.region, country: d.country_name || d.country,
+        isp: d.org || 'Unknown', asn: d.asn || 'Unknown', org: d.org || 'Unknown',
+        timezone: d.timezone || 'Unknown',
+        lat: d.latitude, lon: d.longitude, postal: d.postal,
+      };
+    },
+    async () => {
+      const res = await fetch('https://ipinfo.io/json', { signal: AbortSignal.timeout(5000) });
+      const d = await res.json();
+      const [lat, lon] = (d.loc || ',').split(',').map(Number);
+      return {
+        ip: d.ip, city: d.city, region: d.region, country: d.country,
+        isp: d.org || 'Unknown', asn: d.org?.split(' ')[0] || 'Unknown', org: d.org || 'Unknown',
+        timezone: d.timezone || 'Unknown',
+        lat, lon, postal: d.postal,
+      };
+    },
+  ];
+
+  for (const api of apis) {
+    try { return await api(); } catch (e) { /* try next */ }
   }
+
+  return { ip: 'Unavailable', city: 'Unknown', region: 'Unknown', country: 'Unknown',
+           isp: 'Unknown', asn: 'Unknown', org: 'Unknown', timezone: 'Unknown' };
 }
 
 // ─── INFERENCE ENGINE ──────────────────────────────────────────────────────────
@@ -915,6 +942,20 @@ async function renderResults() {
     signalRow('Referrer', network.referrer),
     signalRow('Connection', network.connection),
   ].join('');
+
+  // IP map
+  if (ip.lat && ip.lon && !isNaN(ip.lat) && !isNaN(ip.lon)) {
+    const mapEl = document.getElementById('ipMap');
+    mapEl.classList.remove('hidden');
+    const map = L.map('ipMap', { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false })
+      .setView([ip.lat, ip.lon], 10);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+    }).addTo(map);
+    L.circleMarker([ip.lat, ip.lon], {
+      radius: 9, color: '#58a6ff', fillColor: '#58a6ff', fillOpacity: 0.85, weight: 2,
+    }).bindTooltip(`${ip.city || ''}, ${ip.region || ''}`, { permanent: true, direction: 'top', className: 'map-label' }).addTo(map);
+  }
 
   // Fingerprint signals
   document.getElementById('fingerprintSignals').innerHTML = [
