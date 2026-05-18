@@ -1,6 +1,8 @@
 # Who Does Your Browser Think You Are?
 
-An interactive single-page demo that shows how ad networks profile users from passive browser signals. Runs entirely in the browser. No backend. No tracking.
+**[Try it live](https://chettobrey.github.io/psycho-profile/)**
+
+An interactive demo that shows how ad networks profile you from passive browser signals, before you click anything. Runs entirely in your browser. No backend, no tracking, no accounts.
 
 ## What it does
 
@@ -12,46 +14,12 @@ An interactive single-page demo that shows how ad networks profile users from pa
 6. Simulates ad creatives that would be served to the inferred profile
 7. Explains the reasoning and uncertainty behind every inference
 
-## Privacy guarantees
+## Privacy
 
 - Nothing is stored. No cookies, no localStorage writes, no accounts.
 - The only external call is a single GET to `https://ipwho.is/` for IP geolocation. That request carries your IP (obviously) but no other identifying information.
 - No analytics, no telemetry, no third-party scripts.
-
-## Running locally on a Mac
-
-**Option 1: Just open the file (easiest)**
-
-Double-click `index.html` in Finder, or from Terminal:
-
-```bash
-open index.html
-```
-
-That's it. No install, no server, no build step. It opens in your default browser directly from the filesystem. All the fingerprinting APIs and the IP geolocation request work fine from a `file://` URL.
-
-**Option 2: Serve it (if you want a real URL)**
-
-If you'd rather hit `http://localhost:8080` instead of a `file://` path:
-
-```bash
-# Python (already on every Mac)
-python3 -m http.server 8080
-
-# Then open http://localhost:8080 in your browser
-```
-
-Or if you have Node installed:
-
-```bash
-npx serve .
-```
-
-Either way, run the command from the `psycho-profile/` directory.
-
-## Deploying
-
-Drop `index.html` on any static host: Vercel, Netlify, GitHub Pages, S3, Cloudflare Pages. No build step.
+- View source to verify.
 
 ## What's collected
 
